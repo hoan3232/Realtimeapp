@@ -1,0 +1,74 @@
+# Function to extract transition variables and compare them with default_max_transition
+proc extract_and_compare_transitions {lib_file} {
+    set file [open $lib_file r]
+    set content [read $file]
+    close $file
+
+    set transition_variables {}
+    set default_max_transition ""
+    set current_template ""
+
+    foreach line [split $content "\n"] {
+        # Check for default_max_transition
+        if {[regexp {default_max_transition\s*:\s*([0-9.]+)} $line -> max_transition]} {
+            set default_max_transition $max_transition
+        }
+
+        # Check for template definition
+        if {[regexp {lu_table_template\((\w+)\)} $line -> template]} {
+            set current_template $template
+            lappend transition_variables [list $current_template {}]
+            continue
+        }
+
+        # Check for transition variables
+        if {$current_template ne "" && [regexp {(\w*transition\w*)\s*:\s*"([^"]*)"} $line -> var_name var_value]} {
+            set last_index [expr {[llength $transition_variables] - 1}]
+            set current_list [lindex $transition_variables $last_index]
+            lappend current_list [list $var_name $var_value]
+            set transition_variables [lreplace $transition_variables $last_index $last_index $current_list]
+        }
+    }
+
+    # Compare transition values with default_max_transition
+    foreach template_vars $transition_variables {
+        set template [lindex $template_vars 0]
+        foreach {var_name var_value} [lrange $template_vars 1 end] {
+            if {![string is double -strict $var_value]} {
+                continue
+            }
+            if {$var_value > $default_max_transition} {
+                puts "Template: $template"
+                puts "  $var_name : $var_value (exceeds default_max_transition of $default_max_transition)"
+            }
+        }
+    }
+}
+
+# Example .lib content
+set lib_content {
+default_max_transition : 0.06;
+
+lu_table_template(template1) {
+    variable_1 : "input_net_transition";
+    variable_2 : "total_output_net_capacitance";
+    index_1 ("0.0025, 0.005, 0.01, 0.02, 0.04, 0.08");
+    index_2 ("0.5, 1, 2, 4, 8, 16");
+}
+
+lu_table_template(template2) {
+    variable_1 : "input_transition_time";
+    variable_2 : "total_output_net_capacitance";
+    index_1 ("0.003, 0.006, 0.012, 0.024, 0.048, 0.096");
+    index_2 ("0.6, 1.2, 2.4, 4.8, 9.6, 19.2");
+}
+}
+
+# Write example content to a file
+set lib_file "example.lib"
+set file [open $lib_file w]
+puts $file $lib_content
+close $file
+
+# Extract and compare transition variables from the file
+extract_and_compare_transitions $lib_file
